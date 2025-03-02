@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\risha\Documents\GitHub\ML-NBALineupPrediction\nba_lineup_venv"
+VIRTUAL_ENV="D:\Github\ML-NBALineupPrediction\nba_lineup_venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"

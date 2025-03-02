@@ -1,4 +1,4 @@
-#!C:\Users\risha\Documents\GitHub\ML-NBALineupPrediction\nba_lineup_venv\Scripts\python.exe
+#!D:\Github\ML-NBALineupPrediction\nba_lineup_venv\Scripts\python.exe
 from __future__ import absolute_import, division, print_function
 
 from PIL import Image

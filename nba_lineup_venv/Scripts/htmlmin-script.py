@@ -1,4 +1,4 @@
-#!C:\Users\risha\Documents\GitHub\ML-NBALineupPrediction\nba_lineup_venv\Scripts\python.exe
+#!D:\Github\ML-NBALineupPrediction\nba_lineup_venv\Scripts\python.exe
 # EASY-INSTALL-ENTRY-SCRIPT: 'htmlmin==0.1.12','console_scripts','htmlmin'
 import re
 import sys
