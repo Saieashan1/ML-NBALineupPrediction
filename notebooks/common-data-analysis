@@ -1,0 +1,422 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Exploratory Data Analysis for NBA Lineup Prediction and Hidden Patterns\n",
+    "\n",
+    "This notebook organizes the data exploration steps from the raw CSV file and implements several views to uncover hidden patterns. Our goals include:\n",
+    "\n",
+    "- **Lineup stability and variation** over time\n",
+    "- **Frequency of player appearances** in different positions (e.g., home_0 to home_4)\n",
+    "- **Outcome analysis** by lineup\n",
+    "- **Common matchups:** identifying which home players appear most frequently against specific away lineups\n",
+    "\n",
+    "These insights will help us engineer better features for the predictive model."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Import necessary libraries\n",
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import glob\n",
+    "import os\n",
+    "\n",
+    "import matplotlib.pyplot as plt\n",
+    "import seaborn as sns\n",
+    "\n",
+    "# Suppress warnings\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')\n",
+    "\n",
+    "# Set display options for Pandas\n",
+    "pd.set_option('display.max_columns', None)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Load and Inspect the Raw Data\n",
+    "\n",
+    "In this section, we load the raw CSV file for the 2007 season and inspect its contents."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Load the 2007 dataset (update the path as needed)\n",
+    "data_path = \"../data/matchups-2007.csv\"\n",
+    "df2007 = pd.read_csv(data_path)\n",
+    "\n",
+    "# Display the first few rows and information about the dataset\n",
+    "print(df2007.head())\n",
+    "print(df2007.info())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Filter Data and Create a Date Column\n",
+    "\n",
+    "We now filter the dataset to include only the allowed features and extract a proper date from the `game` column."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Define the allowed features\n",
+    "allowed_features = [\n",
+    "    'game', 'season', 'home_team', 'away_team', 'starting_min',\n",
+    "    'home_0', 'home_1', 'home_2', 'home_3', 'home_4',\n",
+    "    'away_0', 'away_1', 'away_2', 'away_3', 'away_4',\n",
+    "    'outcome'\n",
+    "]\n",
+    "\n",
+    "# Filter the dataframe and create a copy\n",
+    "df_filtered = df2007[allowed_features].copy()\n",
+    "\n",
+    "# Create a date column from the first 8 characters of the 'game' column\n",
+    "df_filtered['date'] = pd.to_datetime(df_filtered['game'].str[:8], format='%Y%m%d')\n",
+    "\n",
+    "print(df_filtered.head())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Create Lineup Tuples for Home and Away Teams\n",
+    "\n",
+    "To analyze lineup frequency and uniqueness, we create sorted tuples for both home and away lineups."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Create lineup tuples (sorted alphabetically for consistency)\n",
+    "df_filtered['home_lineup'] = df_filtered[['home_0', 'home_1', 'home_2', 'home_3', 'home_4']].apply(lambda x: tuple(sorted(x)), axis=1)\n",
+    "df_filtered['away_lineup'] = df_filtered[['away_0', 'away_1', 'away_2', 'away_3', 'away_4']].apply(lambda x: tuple(sorted(x)), axis=1)\n",
+    "\n",
+    "print(df_filtered[['game', 'home_lineup', 'away_lineup', 'date']].head())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Unique Lineup Counts per Game\n",
+    "\n",
+    "Here we group by game and count how many unique home and away lineups were used."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Count unique lineups per game\n",
+    "lineup_counts = df_filtered.groupby('game').agg(\n",
+    "    unique_home_lineups=('home_lineup', 'nunique'),\n",
+    "    unique_away_lineups=('away_lineup', 'nunique')\n",
+    ").reset_index()\n",
+    "\n",
+    "print(lineup_counts.head())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. Most Frequently Used Lineups per Game\n",
+    "\n",
+    "We now identify the most frequently used home and away lineups for each game."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Count occurrences of each lineup combination\n",
+    "lineup_usage = df_filtered.groupby(['game', 'home_team', 'away_team', 'date', 'home_lineup', 'away_lineup']).size().reset_index(name='count')\n",
+    "\n",
+    "# For each game, select the lineup combination with the highest count\n",
+    "most_used_lineups = lineup_usage.sort_values(['game', 'count'], ascending=[True, False]).drop_duplicates('game')\n",
+    "\n",
+    "print(most_used_lineups.head())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 6. Additional Views and Analyses\n",
+    "\n",
+    "In this section we implement several analyses to uncover hidden patterns:\n",
+    "\n",
+    "1. **Frequency Analysis by Player Position:** Frequency of players in each home position\n",
+    "2. **Outcome Analysis by Home Lineup:** Average outcome (e.g., win/loss) and number of games per lineup\n",
+    "3. **Common Home Players Against Specific Away Lineups:** Which home players appear most often against each away lineup\n",
+    "4. **Lineup Variation Over Time:** How the number of unique home lineups changes over time"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 6.1 Frequency Analysis by Player Position\n",
+    "\n",
+    "We calculate how frequently each player appears in each home position (home_0, home_1, etc.)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Analyze frequency of players in each home position\n",
+    "for pos in ['home_0', 'home_1', 'home_2', 'home_3', 'home_4']:\n",
+    "    print(f\"Frequency for {pos}:\")\n",
+    "    print(df_filtered[pos].value_counts().head(10))\n",
+    "    print(\"---\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 6.2 Outcome Analysis by Home Lineup\n",
+    "\n",
+    "Here we group by both the home team and home lineup to compute the number of games and the average outcome for each lineup."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Outcome analysis by home lineup with home team information\n",
+    "lineup_outcomes = df_filtered.groupby(['home_team', 'home_lineup']).agg(\n",
+    "    games=('game', 'count'),\n",
+    "    avg_outcome=('outcome', 'mean')\n",
+    ").reset_index()\n",
+    "\n",
+    "print(lineup_outcomes.sort_values('games', ascending=False).head(10))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Optionally, view a larger subset sorted by average outcome\n",
+    "lineup_outcomes.head(35).sort_values('avg_outcome', ascending=False)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 6.3 Most Common Home Players Against Specific Away Lineups\n",
+    "\n",
+    "We melt the home player columns to analyze individual player frequencies per away lineup and then sort the results."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Melt the home player columns to analyze individual player frequency\n",
+    "home_players = df_filtered.melt(\n",
+    "    id_vars=['game', 'away_lineup', 'date'],\n",
+    "    value_vars=['home_0', 'home_1', 'home_2', 'home_3', 'home_4'],\n",
+    "    var_name='home_position',\n",
+    "    value_name='home_player'\n",
+    ")\n",
+    "\n",
+    "# Count the frequency of each home player per away lineup\n",
+    "common_players_vs_away = home_players.groupby(['away_lineup', 'home_player']).size().reset_index(name='count')\n",
+    "\n",
+    "# Sort the entire DataFrame by away_lineup and descending count\n",
+    "sorted_common_players = common_players_vs_away.sort_values(['away_lineup', 'count'], ascending=[True, False])\n",
+    "\n",
+    "# Display the first 35 rows\n",
+    "sorted_common_players.head(35)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 6.4 Lineup Variation Over Time\n",
+    "\n",
+    "We merge the unique lineup counts with game dates and examine how the average number of unique home lineups changes over time."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Merge the lineup_counts with date information (one record per game)\n",
+    "game_dates = df_filtered[['game', 'date']].drop_duplicates()\n",
+    "lineup_counts = lineup_counts.merge(game_dates, on='game', how='left')\n",
+    "\n",
+    "# Aggregate the average number of unique home lineups by date\n",
+    "daily_variation = lineup_counts.groupby('date')['unique_home_lineups'].mean().reset_index()\n",
+    "\n",
+    "plt.figure(figsize=(12, 6))\n",
+    "plt.plot(daily_variation['date'], daily_variation['unique_home_lineups'], marker='o')\n",
+    "plt.title('Average Unique Home Lineups Over Time')\n",
+    "plt.xlabel('Date')\n",
+    "plt.ylabel('Average Unique Home Lineups')\n",
+    "plt.xticks(rotation=45)\n",
+    "plt.tight_layout()\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 7. Starting Lineup Analysis\n",
+    "\n",
+    "Next, we focus on the starting lineups. We extract, for each game, the row with the smallest `starting_min` (the starting lineup) and then determine:\n",
+    "\n",
+    "- The **most common starting lineup** for each home team\n",
+    "- The **most successful starting lineup** (using average outcome as a proxy)\n",
+    "\n",
+    "Below we combine these analyses."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Extract the starting lineup for each game (using the smallest starting_min per game)\n",
+    "starting_lineups = df_filtered.sort_values('starting_min').groupby('game').first().reset_index()\n",
+    "\n",
+    "# Compute frequency and average outcome for each starting lineup by home team\n",
+    "starting_lineup_stats = starting_lineups.groupby(['home_team', 'home_lineup']).agg(\n",
+    "    games_count=('game', 'count'),\n",
+    "    avg_outcome=('outcome', 'mean')\n",
+    ").reset_index()\n",
+    "\n",
+    "# For each home team, select the most common starting lineup\n",
+    "idx_common = starting_lineup_stats.groupby('home_team')['games_count'].idxmax()\n",
+    "most_common_starting_lineups = starting_lineup_stats.loc[idx_common].reset_index(drop=True)\n",
+    "\n",
+    "print(\"Most Common Starting Lineups:\")\n",
+    "print(most_common_starting_lineups.sort_values('games_count', ascending=False))\n",
+    "\n",
+    "# For each home team, select the starting lineup with the highest average outcome\n",
+    "# (Optionally filtering out those with very few appearances)\n",
+    "min_games = 5\n",
+    "team_lineup_success = starting_lineup_stats[starting_lineup_stats['games_count'] >= min_games]\n",
+    "idx_success = team_lineup_success.groupby('home_team')['avg_outcome'].idxmax()\n",
+    "most_successful_starting_lineups = team_lineup_success.loc[idx_success].reset_index(drop=True)\n",
+    "\n",
+    "print(\"\\nMost Successful Starting Lineups:\")\n",
+    "print(most_successful_starting_lineups.sort_values('avg_outcome', ascending=False))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 8. Minutes Played Analysis\n",
+    "\n",
+    "We now calculate the minutes played by each home player using only the `starting_min` values. In each game, the duration of a lineup segment is calculated as the difference between the current row’s `starting_min` and the next row’s `starting_min`. For the final segment of a game, we use the game length (48 minutes) minus the current `starting_min`. Note that a player may change positions during the game; this approach accounts for that by melting all home lineup columns."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "source": [
+    "# Sort the DataFrame by game and starting_min\n",
+    "df_sorted = df_filtered.sort_values(['game', 'starting_min']).copy()\n",
+    "\n",
+    "# Compute the duration for each lineup segment per game\n",
+    "# For each game, duration = next starting_min - current starting_min\n",
+    "# For the last segment in each game, duration = 48 - current starting_min\n",
+    "df_sorted['duration'] = df_sorted.groupby('game')['starting_min'].transform(lambda x: x.shift(-1) - x)\n",
+    "df_sorted['duration'] = df_sorted['duration'].fillna(48 - df_sorted['starting_min'])\n",
+    "\n",
+    "# Melt the home lineup columns so that each row corresponds to a player's appearance in that segment\n",
+    "home_players = df_sorted.melt(\n",
+    "    id_vars=['game', 'home_team', 'duration'],\n",
+    "    value_vars=['home_0', 'home_1', 'home_2', 'home_3', 'home_4'],\n",
+    "    var_name='position',\n",
+    "    value_name='player'\n",
+    ")\n",
+    "\n",
+    "# Group by home_team and player to sum the durations (minutes played)\n",
+    "player_minutes = home_players.groupby(['home_team', 'player'])['duration'].sum().reset_index()\n",
+    "player_minutes.rename(columns={'duration': 'total_minutes'}, inplace=True)\n",
+    "\n",
+    "# For each team, select the top 5 players by minutes played\n",
+    "top5_by_team = (\n",
+    "    player_minutes.sort_values(['home_team', 'total_minutes'], ascending=[True, False])\n",
+    "    .groupby('home_team')\n",
+    "    .head(5)\n",
+    "    .reset_index(drop=True)\n",
+    ")\n",
+    "\n",
+    "print(top5_by_team)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 9. Conclusions and Next Steps\n",
+    "\n",
+    "We have now organized our exploratory analysis and generated several views:\n",
+    "\n",
+    "- **Data Loading and Preparation:** Inspection, filtering, and date extraction\n",
+    "- **Lineup Analysis:** Creation of lineup tuples, counting unique lineups, and identifying the most frequent and successful lineups\n",
+    "- **Additional Views:** Frequency by position, outcome analysis, common matchup analysis, and temporal variation\n",
+    "- **Starting Lineup & Minutes Played:** Analysis of starting lineups and calculation of playing time by aggregating lineup segment durations\n",
+    "\n",
+    "These insights will guide further feature engineering—such as adding a \"lineup stability\" score or incorporating network centrality measures—to improve the accuracy, precision, and recall of our missing-player prediction model.\n",
+    "\n",
+    "Next steps might include:\n",
+    "\n",
+    "- Deepening the analysis by linking external data (e.g., player positions or roles)\n",
+    "- Applying clustering or association rule mining to detect common player combinations\n",
+    "- Testing different predictive models with the engineered features\n",
+    "\n",
+    "Feel free to extend or modify this analysis as needed."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "nba_lineup_venv",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "version": "3.10.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
